@@ -85,7 +85,7 @@ class Router
     public function run(Request $request): Response
     {
         // Create a response object
-        $response = (new Response())->setRequestContext($request);
+        $response = new Response()->setRequestContext($request);
 
         if ($this->container->has(MercureManager::class)) {
             $mercureManager = $this->container->make(MercureManager::class);

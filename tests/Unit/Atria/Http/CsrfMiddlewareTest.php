@@ -16,7 +16,7 @@ test('invalid csrf token throws a csrf validation exception', function () {
     $reflection->getProperty('body')->setValue($request, ['csrf_token' => 'wrong']);
 
     try {
-        (new CsrfMiddleware(new CsrfManager()))->handle($request, new Response(), fn() => new Response());
+        new CsrfMiddleware(new CsrfManager())->handle($request, new Response(), fn() => new Response());
         test()->fail('Expected CsrfTokenValidationException was not thrown');
     } catch (CsrfTokenValidationException $exception) {
         expect($exception->getStatusCode())->toBe(403);
@@ -31,7 +31,7 @@ test('valid csrf token rotates session token and adds it to response header', fu
     $reflection->getProperty('method')->setValue($request, 'POST');
     $reflection->getProperty('body')->setValue($request, ['csrf_token' => 'expected']);
 
-    $response = (new CsrfMiddleware(new CsrfManager()))->handle(
+    $response = new CsrfMiddleware(new CsrfManager())->handle(
         $request,
         new Response(),
         fn(Request $request, Response $response) => $response->json(['ok' => true]),

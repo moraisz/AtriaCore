@@ -159,7 +159,7 @@ test('expired access with expired refresh redirects without calling protected ro
 });
 
 test('expired access with revoked refresh redirects', function () {
-    $pair = (new AuthTokenService('test-secret'))->issuePair(7, 'user@test.com');
+    $pair = new AuthTokenService('test-secret')->issuePair(7, 'user@test.com');
 
     $result = coreAuthMiddleware(new MockDatabaseConnection())->handle(
         coreAuthCookieRequest(['access_token' => coreAuthAccessToken(time() - 1), 'refresh_token' => $pair['refresh_token']]),

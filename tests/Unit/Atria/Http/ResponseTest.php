@@ -130,14 +130,14 @@ test('appendHeader merges values using separator', function () {
 });
 
 test('mercure adds discovery link header', function () {
-    $response = (new Response())->setMercureManager(responseMercureManager());
+    $response = new Response()->setMercureManager(responseMercureManager());
     $response->mercure();
 
     expect($response->getHeader('Link'))->toBe('</.well-known/mercure>; rel="mercure"');
 });
 
 test('mercureAuthorization stores mercure authorization cookie scoped to hub path', function () {
-    $response = (new Response())->setMercureManager(responseMercureManager());
+    $response = new Response()->setMercureManager(responseMercureManager());
     $response->mercureAuthorization('users/1', 600);
 
     $cookies = $response->getCookies();
@@ -150,7 +150,7 @@ test('mercureAuthorization stores mercure authorization cookie scoped to hub pat
 });
 
 test('mercureAuthorization stores configured cookie domain', function () {
-    $response = (new Response())->setMercureManager(responseMercureManager([
+    $response = new Response()->setMercureManager(responseMercureManager([
         'hub_url' => 'https://hub.example.com/.well-known/mercure',
         'authorization_cookie_domain' => '.example.com',
     ]));
@@ -162,7 +162,7 @@ test('mercureAuthorization stores configured cookie domain', function () {
 });
 
 test('mercureAuthorization marks relative hub cookies as secure on https requests', function () {
-    $response = (new Response())
+    $response = new Response()
         ->setMercureManager(responseMercureManager())
         ->setRequestContext(responseTestRequest(['HTTPS' => 'on']));
     $response->mercureAuthorization('users/1');
@@ -172,7 +172,7 @@ test('mercureAuthorization marks relative hub cookies as secure on https request
 });
 
 test('mercureAuthorization keeps relative hub cookies insecure on http requests', function () {
-    $response = (new Response())
+    $response = new Response()
         ->setMercureManager(responseMercureManager())
         ->setRequestContext(responseTestRequest(['HTTPS' => 'off']));
     $response->mercureAuthorization('users/1');

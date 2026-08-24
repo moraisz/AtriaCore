@@ -78,7 +78,7 @@ test('configureCli registers typed Mercure services', function () {
 
 test('configureCli registers typed CSRF, view, and Vite services', function () {
     $container = new Container();
-    (new Config(atriaConfigPath()))->configureCli($container);
+    new Config(atriaConfigPath())->configureCli($container);
 
     expect($container->make(CsrfManager::class))->toBeInstanceOf(CsrfManager::class)
         ->and($container->make(ViewConfig::class))->toBeInstanceOf(ViewConfig::class)

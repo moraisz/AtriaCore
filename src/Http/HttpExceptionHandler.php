@@ -16,7 +16,7 @@ final class HttpExceptionHandler
     public function handle(\Throwable $exception, ?Request $request): Response
     {
         if ($exception instanceof MercureTransportException) {
-            return (new Response())->json([
+            return new Response()->json([
                 'error' => $exception->getMessage(),
             ], 502);
         }
@@ -27,11 +27,11 @@ final class HttpExceptionHandler
             && !$request->isJson()
         ) {
             $_SESSION['error'] = $exception->getMessage();
-            return (new Response())->redirect($this->redirectPath($request));
+            return new Response()->redirect($this->redirectPath($request));
         }
 
         $statusCode = $exception instanceof HttpException ? $exception->getStatusCode() : 500;
-        $response = (new Response())->json([
+        $response = new Response()->json([
             'error' => $statusCode === 500 ? 'Internal Server Error' : $exception->getMessage(),
         ], $statusCode);
 

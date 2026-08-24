@@ -18,7 +18,7 @@ test('issuePair returns tokens and the refresh jti hash without persistence', fu
 });
 
 test('issuePair tokens carry correct claims', function () {
-    $pair = (new AuthTokenService('test-secret'))->issuePair(7, 'user@test.com');
+    $pair = new AuthTokenService('test-secret')->issuePair(7, 'user@test.com');
     $access = JWT::decode($pair['access_token'], 'test-secret');
     $refresh = JWT::decode($pair['refresh_token'], 'test-secret');
 
@@ -31,7 +31,7 @@ test('issuePair tokens carry correct claims', function () {
 
 test('issuePair preserves absolute refresh expiration during rotation', function () {
     $sessionExpiresAt = time() + 900;
-    $pair = (new AuthTokenService('test-secret'))->issuePair(7, 'user@test.com', $sessionExpiresAt);
+    $pair = new AuthTokenService('test-secret')->issuePair(7, 'user@test.com', $sessionExpiresAt);
     $refresh = JWT::decode($pair['refresh_token'], 'test-secret');
 
     expect($refresh['exp'])->toBe($sessionExpiresAt);
