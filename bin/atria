@@ -1,0 +1,10 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use Atria\System\App;
+
+$app = new App(getcwd() . '/config');
+
+exit($app->handleCommand());
