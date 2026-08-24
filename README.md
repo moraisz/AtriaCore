@@ -10,7 +10,7 @@ Mercure, and FrankenPHP Go extension sources.
 
 ## Requirements
 
-- PHP 8.3 or newer
+- PHP 8.4 or newer
 - PostgreSQL when using the database module
 - FrankenPHP when using worker mode, Mercure publishing, or Go extensions
 
