@@ -96,7 +96,6 @@ class App
 
             // send response
             $response->send();
-
         } catch (\Throwable $e) {
             $exceptionHandler = $this->container->make(HttpExceptionHandler::class);
 
