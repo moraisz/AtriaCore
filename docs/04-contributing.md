@@ -79,3 +79,38 @@ Every reusable feature should include:
 
 Keep pull requests focused. Separate unrelated refactors from behavior changes so that
 reviewers can verify the contract and its integration usage clearly.
+
+## Releases
+
+Releases are managed by the `Release Please` GitHub Actions workflow when commits are
+merged into `main`. It creates or updates a release pull request with the next version
+and generated changelog. Merging that release pull request creates the Git tag and the
+GitHub Release.
+
+Use Conventional Commits for every change that should appear in a release:
+
+```text
+fix(router): preserve query parameters
+feat(auth): add token revocation endpoint
+feat!: replace the route registration contract
+```
+
+The versioning policy is:
+
+- `fix:` creates a PATCH release (`0.1.0` to `0.1.1`).
+- `feat:` creates a MINOR release (`0.1.0` to `0.2.0`).
+- `feat!:` or a `BREAKING CHANGE:` footer denotes an incompatible public change.
+- Before `1.0.0`, incompatible changes create the next MINOR release (`0.1.0` to
+  `0.2.0`). From `1.0.0` onward, they create the next MAJOR release.
+- `docs:`, `test:`, `refactor:`, `style:`, and `chore:` do not create a release unless
+  they are paired with a releasable change.
+
+Composer derives the installed package version from Git tags; do not add a `version`
+field to `composer.json`.
+
+### Packagist
+
+After registering `moraisz/atria-core` on Packagist, connect its GitHub service hook or
+GitHub App integration in Packagist. Every tag created by the release workflow will then
+be imported automatically. This authorization is configured in the Packagist account and
+is intentionally not stored in this repository.
