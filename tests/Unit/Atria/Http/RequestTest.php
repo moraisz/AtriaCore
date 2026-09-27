@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Atria\Http\Request;
+use Atria\Http\UploadedFile;
 
 test('setParams and getParam', function () {
     $request = new Request();
@@ -78,6 +79,86 @@ test('getQuery returns full array or single value', function () {
     expect($request->getQuery())->toBe(['page' => '2', 'sort' => 'desc']);
     expect($request->getQuery('page'))->toBe('2');
     expect($request->getQuery('missing', 'fallback'))->toBe('fallback');
+});
+
+test('query helpers coerce and validate request values', function () {
+    $request = new Request();
+
+    $ref = new ReflectionClass($request);
+    $prop = $ref->getProperty('query');
+    $prop->setValue($request, [
+        'page' => '2',
+        'active' => 'true',
+        'tags' => [' atria ', '', 'php'],
+        'empty' => '  ',
+        'invalid' => 'two',
+    ]);
+
+    expect($request->queryString('page'))->toBe('2');
+    expect($request->queryOptionalString('empty'))->toBeNull();
+    expect($request->queryBool('active'))->toBeTrue();
+    expect($request->queryInt('page', null, 1))->toBe(2);
+    expect($request->queryInt('page', null, 3))->toBeNull();
+    expect($request->queryInt('invalid'))->toBeNull();
+    expect($request->queryStringList('tags'))->toBe(['atria', 'php']);
+});
+
+test('normalizes single, multiple, and nested uploaded files', function () {
+    $files = [
+        'avatar' => [
+            'name' => 'avatar.png',
+            'type' => 'image/png',
+            'tmp_name' => '/tmp/php-avatar',
+            'error' => UPLOAD_ERR_OK,
+            'size' => 123,
+        ],
+        'documents' => [
+            'name' => ['first.pdf', 'second.pdf'],
+            'type' => ['application/pdf', 'application/pdf'],
+            'tmp_name' => ['/tmp/php-first', '/tmp/php-second'],
+            'error' => [UPLOAD_ERR_OK, UPLOAD_ERR_PARTIAL],
+            'size' => [10, 20],
+        ],
+        'attachments' => [
+            'name' => ['identity' => ['front.jpg', 'back.jpg']],
+            'type' => ['identity' => ['image/jpeg', 'image/jpeg']],
+            'tmp_name' => ['identity' => ['/tmp/php-front', '/tmp/php-back']],
+            'error' => ['identity' => [UPLOAD_ERR_OK, UPLOAD_ERR_OK]],
+            'size' => ['identity' => [30, 40]],
+        ],
+    ];
+
+    $originalFiles = $_FILES;
+    $_FILES = $files;
+
+    try {
+        $request = Request::createFromGlobals();
+    } finally {
+        $_FILES = $originalFiles;
+    }
+
+    $avatar = $request->file('avatar');
+    $documents = $request->files('documents');
+    $attachments = $request->files('attachments');
+
+    expect($avatar)->toBeInstanceOf(UploadedFile::class)
+        ->and($avatar?->getOriginalName())->toBe('avatar.png')
+        ->and($avatar?->getClientMediaType())->toBe('image/png')
+        ->and($avatar?->getSize())->toBe(123)
+        ->and($avatar?->isValid())->toBeTrue()
+        ->and($documents[0])->toBeInstanceOf(UploadedFile::class)
+        ->and($documents[1]->getError())->toBe(UPLOAD_ERR_PARTIAL)
+        ->and($documents[1]->isValid())->toBeFalse()
+        ->and($attachments['identity'][0]->getOriginalName())->toBe('front.jpg')
+        ->and($request->file('documents'))->toBeNull();
+});
+
+test('uploaded files reject moving files with upload errors', function () {
+    $file = new UploadedFile('', '', '', UPLOAD_ERR_NO_FILE, 0);
+
+    expect($file->isValid())->toBeFalse()
+        ->and(fn() => $file->moveTo('/tmp/avatar.png'))
+        ->toThrow(RuntimeException::class, 'invalid uploaded file');
 });
 
 test('getBody returns full array or single value', function () {

@@ -24,6 +24,9 @@ class Request
     /** @var array<string, mixed> */
     private array $attributes = [];
 
+    /** @var array<string, UploadedFile|array<mixed>> */
+    private array $files = [];
+
     private string $method = '';
     private string $path = '';
 
@@ -39,6 +42,9 @@ class Request
 
         /** @var array<string, string> $_COOKIE */
         $request->cookies = $_COOKIE;
+
+        /** @var array<string, mixed> $_FILES */
+        $request->files = self::normalizeFiles($_FILES);
 
         $serverReqMethod = $_SERVER['REQUEST_METHOD'] ?? null;
         $request->method = is_string($serverReqMethod) ? $serverReqMethod : 'GET';
@@ -119,6 +125,63 @@ class Request
         return $this->query[$key] ?? $default;
     }
 
+    public function queryString(string $key, string $default = ''): string
+    {
+        $value = $this->getQuery($key, $default);
+
+        return is_string($value) ? $value : $default;
+    }
+
+    public function queryOptionalString(string $key): ?string
+    {
+        $value = trim($this->queryString($key));
+
+        return $value !== '' ? $value : null;
+    }
+
+    public function queryBool(string $key, bool $default = false): bool
+    {
+        $value = $this->getQuery($key, $default);
+
+        return filter_var($value, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE) ?? $default;
+    }
+
+    public function queryInt(string $key, ?int $default = null, ?int $min = null): ?int
+    {
+        return $this->valueAsInt($this->getQuery($key), $default, $min);
+    }
+
+    /** @return array<int, string> */
+    public function queryStringList(string $key): array
+    {
+        return $this->valueAsStringList($this->getQuery($key));
+    }
+
+    public function file(string $key): ?UploadedFile
+    {
+        $file = $this->files[$key] ?? null;
+
+        return $file instanceof UploadedFile ? $file : null;
+    }
+
+    /**
+     * @return array<mixed>
+     */
+    public function files(string $key): array
+    {
+        $files = $this->files[$key] ?? null;
+
+        return is_array($files) ? $files : [];
+    }
+
+    /**
+     * @return array<string, UploadedFile|array<mixed>>
+     */
+    public function allFiles(): array
+    {
+        return $this->files;
+    }
+
     public function getBody(?string $key = null, mixed $default = null): mixed
     {
         if ($key === null) {
@@ -150,29 +213,7 @@ class Request
 
     public function bodyInt(string $key, ?int $default = null, ?int $min = null): ?int
     {
-        $value = $this->getBody($key);
-
-        if ($value === null || $value === '') {
-            return $default;
-        }
-
-        if (is_int($value)) {
-            $int = $value;
-        } elseif (is_string($value)) {
-            $int = filter_var($value, FILTER_VALIDATE_INT);
-
-            if ($int === false) {
-                return null;
-            }
-        } else {
-            return null;
-        }
-
-        if ($min !== null && $int < $min) {
-            return null;
-        }
-
-        return $int;
+        return $this->valueAsInt($this->getBody($key), $default, $min);
     }
 
     /**
@@ -180,13 +221,7 @@ class Request
      */
     public function bodyStringList(string $key): array
     {
-        $value = $this->getBody($key);
-        $items = is_array($value) ? $value : [$value];
-
-        return array_values(array_filter(array_map(
-            static fn(mixed $item): string => is_string($item) ? trim($item) : '',
-            $items,
-        ), static fn(string $item): bool => $item !== ''));
+        return $this->valueAsStringList($this->getBody($key));
     }
 
     public function getMethod(): string
@@ -251,5 +286,122 @@ class Request
         header('Link: <assets/css/style.css>; rel=preload; as=style', false, 103);
         header('Link: <assets/js/app.js>; rel=preload; as=script', false, 103);
         headers_send(103);
+    }
+
+    private function valueAsInt(mixed $value, ?int $default, ?int $min): ?int
+    {
+        if ($value === null || $value === '') {
+            return $default;
+        }
+
+        if (is_int($value)) {
+            $int = $value;
+        } elseif (is_string($value)) {
+            $int = filter_var($value, FILTER_VALIDATE_INT);
+
+            if ($int === false) {
+                return null;
+            }
+        } else {
+            return null;
+        }
+
+        return $min !== null && $int < $min ? null : $int;
+    }
+
+    /** @return array<int, string> */
+    private function valueAsStringList(mixed $value): array
+    {
+        $items = is_array($value) ? $value : [$value];
+
+        return array_values(array_filter(array_map(
+            static fn(mixed $item): string => is_string($item) ? trim($item) : '',
+            $items,
+        ), static fn(string $item): bool => $item !== ''));
+    }
+
+    /**
+     * @param array<string, mixed> $files
+     * @return array<string, UploadedFile|array<mixed>>
+     */
+    private static function normalizeFiles(array $files): array
+    {
+        $normalized = [];
+
+        foreach ($files as $key => $file) {
+            if (is_array($file)) {
+                $normalized[$key] = self::normalizeFile($file);
+            }
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @param array<mixed> $file
+     * @return UploadedFile|array<mixed>
+     */
+    private static function normalizeFile(array $file): UploadedFile|array
+    {
+        $name = $file['name'] ?? null;
+        $type = $file['type'] ?? null;
+        $temporaryPath = $file['tmp_name'] ?? null;
+        $error = $file['error'] ?? null;
+        $size = $file['size'] ?? null;
+
+        if (is_array($name)) {
+            return self::normalizeFileTree($name, $type, $temporaryPath, $error, $size);
+        }
+
+        return new UploadedFile(
+            is_string($name) ? $name : '',
+            is_string($type) ? $type : '',
+            is_string($temporaryPath) ? $temporaryPath : '',
+            is_int($error) ? $error : UPLOAD_ERR_NO_FILE,
+            is_int($size) ? $size : 0,
+        );
+    }
+
+    /**
+     * @param array<mixed> $names
+     * @return array<mixed>
+     */
+    private static function normalizeFileTree(
+        array $names,
+        mixed $types,
+        mixed $temporaryPaths,
+        mixed $errors,
+        mixed $sizes,
+    ): array {
+        $files = [];
+
+        foreach ($names as $key => $name) {
+            $type = is_array($types) ? ($types[$key] ?? null) : null;
+            $temporaryPath = is_array($temporaryPaths) ? ($temporaryPaths[$key] ?? null) : null;
+            $error = is_array($errors) ? ($errors[$key] ?? null) : null;
+            $size = is_array($sizes) ? ($sizes[$key] ?? null) : null;
+
+            if (is_array($name)) {
+                $files[$key] = self::normalizeFileTree(
+                    $name,
+                    $type,
+                    $temporaryPath,
+                    $error,
+                    $size,
+                );
+
+                continue;
+            }
+
+            $files[$key] = new UploadedFile(
+                is_string($name) ? $name : '',
+                is_string($type) ? $type : '',
+                is_string($temporaryPath) ? $temporaryPath : '',
+                is_int($error) ? $error : UPLOAD_ERR_NO_FILE,
+                is_int($size) ? $size : 0,
+            );
+        }
+
+        return $files;
     }
 }

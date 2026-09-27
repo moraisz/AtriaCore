@@ -7,6 +7,15 @@ classes, and exception handling. Routes are registered through classes listed in
 `config/routes.php`. The router obtains controllers and middleware from the container,
 which allows their constructor dependencies to be resolved consistently.
 
+`Request` exposes query-string helpers (`queryString()`, `queryOptionalString()`,
+`queryBool()`, `queryInt()`, and `queryStringList()`) alongside `getQuery()`.
+
+For `multipart/form-data`, use `file()` for one file and `files()` or `allFiles()`
+for repeated or nested fields. Each `UploadedFile` exposes client metadata, its upload
+error and size, plus `isValid()`, `moveTo()` and `openStream()`. The framework never
+selects a storage location: the application must validate the file and choose a safe,
+generated destination name before calling `moveTo()`.
+
 ## Database and Migrations
 
 `Atria\Database` contains the database contracts, query-builder abstractions, models,
