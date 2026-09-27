@@ -61,8 +61,8 @@ composer test
 Use `composer cs-fix` to apply formatting. Do not manually imitate formatter output.
 PHPStan runs at its maximum configured level against `src/`.
 
-GitHub Actions runs the same checks for pushes and pull requests. Pull requests also
-run GitHub's dependency review, which reports newly introduced vulnerable dependencies.
+GitHub Actions runs the same checks for pushes and pull requests, including `composer audit`
+for known dependency vulnerabilities.
 
 For a change affecting bootstrapping, configuration, views and Vite, migrations,
 FrankenPHP, Mercure, or Go extensions, also run the relevant checks from the sibling
