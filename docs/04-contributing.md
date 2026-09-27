@@ -52,6 +52,7 @@ Run these commands from the Core repository before submitting a change:
 
 ```bash
 composer validate --no-check-publish
+composer audit
 composer cs-check
 composer phpstan
 composer test
@@ -59,6 +60,9 @@ composer test
 
 Use `composer cs-fix` to apply formatting. Do not manually imitate formatter output.
 PHPStan runs at its maximum configured level against `src/`.
+
+GitHub Actions runs the same checks for pushes and pull requests. Pull requests also
+run GitHub's dependency review, which reports newly introduced vulnerable dependencies.
 
 For a change affecting bootstrapping, configuration, views and Vite, migrations,
 FrankenPHP, Mercure, or Go extensions, also run the relevant checks from the sibling
