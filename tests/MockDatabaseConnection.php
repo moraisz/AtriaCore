@@ -38,16 +38,42 @@ class MockDatabaseConnection implements DatabaseConnection
         return null;
     }
 
-    public function beginTransaction(): void {}
+    public bool $transactionOpen = false;
+
+    public ?string $nextInsertId = null;
+
+    /** @var array<int, int> */
+    public array $affectedRows = [];
+
+    public function beginTransaction(): void
+    {
+        $this->transactionOpen = true;
+    }
+
+    public function inTransaction(): bool
+    {
+        return $this->transactionOpen;
+    }
+
+    public function lastInsertId(): ?string
+    {
+        return $this->nextInsertId;
+    }
 
     public function isConnected(): bool
     {
         return $this->connected;
     }
 
-    public function commit(): void {}
+    public function commit(): void
+    {
+        $this->transactionOpen = false;
+    }
 
-    public function rollback(): void {}
+    public function rollback(): void
+    {
+        $this->transactionOpen = false;
+    }
 
     public function execute(string $query, array $bindings = []): PDOStatement|bool
     {
@@ -59,7 +85,7 @@ class MockDatabaseConnection implements DatabaseConnection
             $rows[] = $row;
         }
 
-        return new MockPDOStatement($rows);
+        return new MockPDOStatement($rows, array_shift($this->affectedRows) ?? count($rows));
     }
 
     private function __clone() {}
@@ -77,9 +103,14 @@ class MockPDOStatement extends PDOStatement
     private array $rows;
 
     /** @param array<int, array<string, mixed>> $rows */
-    public function __construct(array $rows = [])
+    public function __construct(array $rows = [], private int $affected = 0)
     {
         $this->rows = $rows;
+    }
+
+    public function rowCount(): int
+    {
+        return $this->affected;
     }
 
     /** @return array<int, array<string, mixed>> */

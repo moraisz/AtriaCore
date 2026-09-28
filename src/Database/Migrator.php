@@ -6,19 +6,23 @@ namespace Atria\Database;
 
 use Atria\Database\AbstractClasses\Migration;
 use Atria\Database\Contracts\QueryBuilder;
+use Atria\Database\Schema\Blueprint;
+use Atria\Database\Schema\Schema;
 
 class Migrator
 {
     private QueryBuilder $queryBuilder;
+    private Schema $schema;
     /** @var array<int, string> */
     private array $migrationPaths;
 
     /**
      * @param string|array<int, string> $migrationsPath
      */
-    public function __construct(QueryBuilder $queryBuilder, string|array $migrationsPath)
+    public function __construct(QueryBuilder $queryBuilder, Schema $schema, string|array $migrationsPath)
     {
         $this->queryBuilder = $queryBuilder;
+        $this->schema = $schema;
         if (is_array($migrationsPath)) {
             $paths = array_values(array_filter($migrationsPath, 'is_string'));
         } else {
@@ -31,14 +35,12 @@ class Migrator
 
     private function createMigrationsTable(): void
     {
-        $this->queryBuilder
-            ->createTable('migrations', [
-                'id' => 'SERIAL PRIMARY KEY',
-                'migration' => 'VARCHAR(255) NOT NULL',
-                'batch' => 'INTEGER NOT NULL',
-                'executed_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
-            ])
-            ->execute();
+        $this->schema->create('migrations', static function (Blueprint $table): void {
+            $table->id();
+            $table->string('migration');
+            $table->integer('batch');
+            $table->timestamp('executed_at')->nullable()->useCurrent();
+        });
     }
 
     public function run(): void
@@ -75,6 +77,7 @@ class Migrator
             }
 
             $instance->setQueryBuilder($this->queryBuilder);
+            $instance->setSchema($this->schema);
             $instance->up();
 
             $this->logMigration($migration, $batch);
@@ -129,6 +132,7 @@ class Migrator
             }
 
             $instance->setQueryBuilder($this->queryBuilder);
+            $instance->setSchema($this->schema);
             $instance->down();
 
             $this->removeMigration($migrationName);

@@ -143,3 +143,12 @@ test('container request flush rolls back the persistent connection', function ()
     expect($container->make(DatabaseConnection::class))->toBe($connection);
     expect($connection->inTransaction())->toBeFalse();
 });
+
+test('execute binds parameters by their PHP type', function () {
+    $connection = new SqliteMemoryConnection();
+
+    $stmt = $connection->execute('SELECT typeof(?) AS b, typeof(?) AS i, typeof(?) AS n, typeof(?) AS s', [false, 7, null, 'x']);
+    assert($stmt instanceof PDOStatement);
+
+    expect($stmt->fetch())->toBe(['b' => 'integer', 'i' => 'integer', 'n' => 'null', 's' => 'text']);
+});

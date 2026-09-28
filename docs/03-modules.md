@@ -18,9 +18,39 @@ generated destination name before calling `moveTo()`.
 
 ## Database and Migrations
 
-`Atria\Database` contains the database contracts, query-builder abstractions, models,
-and migrator. The `Drivers` registry currently maps only the `pgsql` driver to
-`PgSqlConnection` and `PgSqlQueryBuilder`.
+`Atria\Database` contains the database contracts, query-builder abstractions, the schema
+builder, models, and migrator. The `Drivers` registry maps each driver name to a
+connection, a query builder and a schema grammar:
+
+| Driver | Connection | PHP extension |
+| --- | --- | --- |
+| `pgsql` | `PgSqlConnection` | `pdo_pgsql` (in the Core image) |
+| `sqlite` | `SqliteConnection` (`database` is a file path or `:memory:`; enables foreign keys) | `pdo_sqlite` |
+| `mysql`, `mariadb` | `MySqlConnection` (`charset` defaults to `utf8mb4`) | `pdo_mysql`, installed by the application image |
+
+Dialect differences stay inside the drivers. MySQL has no `RETURNING`: a single-row
+insert is read back through `lastInsertId()` and assumes an `id` primary key, a
+multi-row insert returns no rows, and an explicit `returning()` throws. MySQL also needs
+the table name in `dropIndex()`. `affected()` returns matched rows on every driver, and
+`transaction()` commits, rolls back on any exception, or joins an open transaction.
+Bindings are sent with their PHP type, so `false`, `null` and integers reach the database
+as booleans, NULL and integers.
+
+Migrations describe tables with `$this->schema` instead of dialect SQL:
+
+```php
+$this->schema->create('posts', static function (Blueprint $table): void {
+    $table->id();
+    $table->foreignId('user_id')->references('users')->cascadeOnDelete();
+    $table->string('title', 120);
+    $table->boolean('published')->default(false);
+    $table->timestamps();
+    $table->index(['user_id']);
+});
+```
+
+Columns are `NOT NULL` unless `nullable()`. `$this->queryBuilder->createTable()` still
+accepts raw column definitions for dialect-specific needs.
 
 Database configuration defines the default connection, connection details, model path,
 and migration path or paths. For CLI migrations, `Config` registers `Migrator` and adds
@@ -33,9 +63,14 @@ rolls back any transaction left open and closes the connection once the optional
 retried once on a fresh connection when the server dropped the old one; inside a
 transaction the error is rethrown.
 
-New drivers should provide implementations of `DatabaseConnection` and `QueryBuilder`,
-be registered through `Drivers`, and have focused tests for both configuration and query
-behavior.
+New drivers should extend `PdoConnection`, `SqlQueryBuilder` and `SchemaGrammar`, be
+registered through `Drivers`, and be added to the `drivers` dataset in
+`tests/Integration/Database/DriverTest.php`.
+
+Upgrading from the PostgreSQL-only layer: `DatabaseConnection` gained `inTransaction()`
+and `lastInsertId()`, `QueryBuilder` gained `affected()` and `transaction()`, and
+`Migrator` now takes a `Schema` as its second constructor argument. Migrations that have
+already run are not affected.
 
 ## Authentication
 

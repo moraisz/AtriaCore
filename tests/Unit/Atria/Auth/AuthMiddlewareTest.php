@@ -128,8 +128,8 @@ test('expired access with valid refresh rotates both cookies without extending s
     );
 
     expect($called)->toBeTrue();
-    expect($connection->executedQueries[0])->toContain('WITH consumed AS');
-    expect($connection->executedBindings[0][6])->toBe(date('Y-m-d H:i:s', $sessionExpiresAt));
+    expect($connection->executedQueries[0])->toStartWith('UPDATE refresh_tokens SET revoked_at = ?');
+    expect($connection->executedBindings[1][3])->toBe(date('Y-m-d H:i:s', $sessionExpiresAt));
     expect($result->getCookies())->toHaveCount(2);
     expect(implode(' ', $result->getCookies()))->toContain('Secure')->toContain('HttpOnly')->toContain('SameSite=Strict');
 });

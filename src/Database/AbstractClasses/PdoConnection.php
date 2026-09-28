@@ -56,6 +56,11 @@ abstract class PdoConnection implements DatabaseConnection, Resettable
         ];
     }
 
+    /**
+     * Runs driver-specific session setup right after the connection opens.
+     */
+    protected function configure(PDO $pdo): void {}
+
     protected function createPdo(): PDO
     {
         return new PDO(
@@ -72,7 +77,10 @@ abstract class PdoConnection implements DatabaseConnection, Resettable
             return;
         }
 
-        $this->connection = $this->createPdo();
+        $pdo = $this->createPdo();
+        $this->configure($pdo);
+
+        $this->connection = $pdo;
         $this->connectedAt = $this->now();
     }
 
@@ -110,6 +118,13 @@ abstract class PdoConnection implements DatabaseConnection, Resettable
     public function inTransaction(): bool
     {
         return $this->connection?->inTransaction() ?? false;
+    }
+
+    public function lastInsertId(): ?string
+    {
+        $id = $this->connection?->lastInsertId();
+
+        return is_string($id) && $id !== '' && $id !== '0' ? $id : null;
     }
 
     public function execute(string $query, array $bindings = []): PDOStatement|bool
@@ -156,8 +171,24 @@ abstract class PdoConnection implements DatabaseConnection, Resettable
         if (!$stmt instanceof PDOStatement) {
             throw new PDOException('Failed to prepare statement');
         }
-        $stmt->execute($bindings);
+        foreach (array_values($bindings) as $index => $value) {
+            $stmt->bindValue($index + 1, $value, $this->parameterType($value));
+        }
+        $stmt->execute();
         return $stmt;
+    }
+
+    /**
+     * Binds values by PHP type; PDOStatement::execute() would send false as ''.
+     */
+    protected function parameterType(mixed $value): int
+    {
+        return match (true) {
+            $value === null => PDO::PARAM_NULL,
+            is_bool($value) => PDO::PARAM_BOOL,
+            is_int($value) => PDO::PARAM_INT,
+            default => PDO::PARAM_STR,
+        };
     }
 
     protected function causedByLostConnection(PDOException $e): bool
