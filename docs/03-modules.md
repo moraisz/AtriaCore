@@ -26,6 +26,13 @@ Database configuration defines the default connection, connection details, model
 and migration path or paths. For CLI migrations, `Config` registers `Migrator` and adds
 the built-in Auth migrations when standard Auth migrations are enabled.
 
+The connection is a singleton that stays open across worker requests. PDO drivers extend
+`PdoConnection`, which is `Resettable`: after every request, including failed ones, it
+rolls back any transaction left open and closes the connection once the optional
+`max_lifetime` (seconds, `0` = never) has passed. A statement run outside a transaction is
+retried once on a fresh connection when the server dropped the old one; inside a
+transaction the error is rethrown.
+
 New drivers should provide implementations of `DatabaseConnection` and `QueryBuilder`,
 be registered through `Drivers`, and have focused tests for both configuration and query
 behavior.
