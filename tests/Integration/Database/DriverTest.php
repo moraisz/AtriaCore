@@ -17,7 +17,8 @@ use Atria\Modules\Auth\Services\AuthTokenService;
 /*
  * Runs against real databases. SQLite always runs in memory; PostgreSQL and
  * MySQL run only when DB_TEST_{PGSQL,MYSQL}_HOST is set, using the matching
- * _PORT, _DATABASE, _USERNAME and _PASSWORD variables.
+ * _PORT, _DATABASE, _USERNAME and _PASSWORD variables. A `+emulated` suffix
+ * runs the same driver with PDO::ATTR_EMULATE_PREPARES enabled.
  */
 
 final class IntegrationItem extends Model
@@ -36,8 +37,10 @@ final class IntegrationItem extends Model
 /**
  * @return array{connection: DatabaseConnection, queryBuilder: Closure(): QueryBuilder, schema: Schema}|null
  */
-function integrationDriver(string $driver): ?array
+function integrationDriver(string $variant): ?array
 {
+    [$driver, $mode] = explode('+', $variant) + [1 => ''];
+
     if ($driver === 'sqlite') {
         $config = ['database' => ':memory:'];
     } else {
@@ -54,6 +57,10 @@ function integrationDriver(string $driver): ?array
             'username' => (string) getenv($prefix . 'USERNAME'),
             'password' => (string) getenv($prefix . 'PASSWORD'),
         ];
+    }
+
+    if ($mode === 'emulated') {
+        $config['options'] = [PDO::ATTR_EMULATE_PREPARES => true];
     }
 
     $resolved = Drivers::resolve($driver);
@@ -73,11 +80,11 @@ function integrationDriver(string $driver): ?array
 /**
  * @return array{connection: DatabaseConnection, queryBuilder: Closure(): QueryBuilder, schema: Schema}
  */
-function freshIntegrationDatabase(string $driver): array
+function freshIntegrationDatabase(string $variant): array
 {
-    $db = integrationDriver($driver);
+    $db = integrationDriver($variant);
     if ($db === null) {
-        test()->markTestSkipped("DB_TEST_" . strtoupper($driver) . "_HOST is not set");
+        test()->markTestSkipped('DB_TEST_' . strtoupper(explode('+', $variant)[0]) . '_HOST is not set');
     }
 
     foreach (['refresh_tokens', 'users', 'integration_items', 'migrations'] as $table) {
@@ -118,7 +125,7 @@ function integrationAuthManager(Closure $queryBuilder): AuthManager
     );
 }
 
-dataset('drivers', ['sqlite', 'pgsql', 'mysql']);
+dataset('drivers', ['sqlite', 'pgsql', 'mysql', 'pgsql+emulated', 'mysql+emulated']);
 
 test('model create returns the inserted row', function (string $driver) {
     freshIntegrationDatabase($driver);

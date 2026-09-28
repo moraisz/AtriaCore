@@ -45,12 +45,21 @@ abstract class PdoConnection implements DatabaseConnection, Resettable
     abstract protected function dsn(): string;
 
     /**
+     * PDO attributes for the connection. The `options` config entry overrides
+     * the defaults, e.g. [PDO::ATTR_EMULATE_PREPARES => true] behind a pooler
+     * without prepared statement support. Errors always throw, since reconnects
+     * and request resets rely on exceptions.
+     *
      * @return array<int, mixed>
      */
     protected function options(): array
     {
-        return [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        $configured = $this->config['options'] ?? [];
+        $configured = is_array($configured)
+            ? array_filter($configured, is_int(...), ARRAY_FILTER_USE_KEY)
+            : [];
+
+        return [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION] + $configured + [
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES => false,
         ];

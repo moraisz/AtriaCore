@@ -63,6 +63,11 @@ rolls back any transaction left open and closes the connection once the optional
 retried once on a fresh connection when the server dropped the old one; inside a
 transaction the error is rethrown.
 
+Prepared statements are native by default. A connection's `options` entry overrides the
+PDO attributes, for example `[PDO::ATTR_EMULATE_PREPARES => true]` behind a pooler in
+transaction mode without prepared statement support. `PDO::ATTR_ERRMODE` is always
+`ERRMODE_EXCEPTION`, because reconnects and request resets depend on exceptions.
+
 New drivers should extend `PdoConnection`, `SqlQueryBuilder` and `SchemaGrammar`, be
 registered through `Drivers`, and be added to the `drivers` dataset in
 `tests/Integration/Database/DriverTest.php`.

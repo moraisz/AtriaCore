@@ -41,6 +41,12 @@ class SqliteMemoryConnection extends PdoConnection
     {
         return $this->clock;
     }
+
+    /** @return array<int, mixed> */
+    public function pdoOptions(): array
+    {
+        return $this->options();
+    }
 }
 
 function lostConnection(): PDOException
@@ -151,4 +157,26 @@ test('execute binds parameters by their PHP type', function () {
     assert($stmt instanceof PDOStatement);
 
     expect($stmt->fetch())->toBe(['b' => 'integer', 'i' => 'integer', 'n' => 'null', 's' => 'text']);
+});
+
+test('config options override PDO defaults but keep exceptions on', function () {
+    $connection = new SqliteMemoryConnection(['options' => [
+        PDO::ATTR_EMULATE_PREPARES => true,
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_SILENT,
+        'invalid' => true,
+    ]]);
+
+    expect($connection->pdoOptions())->toBe([
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_EMULATE_PREPARES => true,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    ]);
+});
+
+test('prepares are native by default', function () {
+    expect(new SqliteMemoryConnection()->pdoOptions())->toBe([
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES => false,
+    ]);
 });
