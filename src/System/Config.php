@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Atria\System;
 
+use Atria\Async\EventLoop;
 use Atria\Database\Contracts\DatabaseConnection;
 use Atria\Database\Contracts\QueryBuilder;
 use Atria\Database\AbstractClasses\Model;
@@ -56,6 +57,7 @@ class Config
     public function configureApp(Container $container, Router $router): void
     {
         $this->configureContainer($container);
+        $this->configureEventLoop($container);
         $this->configureAuthConfig();
         $this->configureDatabase($container);
         $this->configureFranken();
@@ -96,6 +98,17 @@ class Config
         foreach ($containerConfig['scoped'] ?? [] as $interface => $implementation) {
             $container->scoped($interface, $implementation);
         }
+    }
+
+    /**
+     * Registers the thread's event loop and resolves it right away, so
+     * flushRequestScope() resets it after every request, even when only
+     * Async::run() or Async::concurrently() used it.
+     */
+    private function configureEventLoop(Container $container): void
+    {
+        $container->singleton(EventLoop::class, static fn(): EventLoop => EventLoop::instance());
+        $container->make(EventLoop::class);
     }
 
     private function configureDatabase(Container $container, bool $migrator = false): void
