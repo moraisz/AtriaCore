@@ -4,40 +4,51 @@ declare(strict_types=1);
 
 namespace Atria\Database\Connections;
 
-use Atria\Database\AbstractClasses\PdoConnection;
-use PDOException;
-use Pdo\Mysql;
+use Atria\Database\AbstractClasses\PooledConnection;
+use Atria\Database\Contracts\ConnectionLink;
 
-class MySqlConnection extends PdoConnection
+/**
+ * MySQL and MariaDB through ext-mysqli. Queries inside Async::concurrently() run at
+ * the same time on separate connections; see MySqlLink for the details.
+ */
+class MySqlConnection extends PooledConnection
 {
-    /**
-     * Reports matched instead of changed rows, so affected() agrees with the
-     * other drivers when an UPDATE writes an unchanged value.
-     */
-    protected function options(): array
+    private ?MySqlPoller $poller = null;
+
+    protected function requiredExtension(): string
     {
-        return parent::options() + [Mysql::ATTR_FOUND_ROWS => true];
+        return 'mysqli';
     }
 
-    protected function dsn(): string
+    protected function openLink(): ConnectionLink
     {
-        $host = $this->configString('host') ?? '';
-        $port = $this->configString('port') ?? '';
-        $database = $this->configString('database') ?? '';
-        $username = $this->configString('username') ?? '';
-        $password = $this->configString('password') ?? '';
+        $config = $this->requireConfig(['host', 'port', 'database', 'username', 'password']);
         $charset = $this->configString('charset') ?? '';
 
-        if ($host === '' || $port === '' || $database === '' || $username === '' || $password === '') {
-            throw new PDOException('Missing required database connection parameters');
-        }
-
-        return sprintf(
-            'mysql:host=%s;port=%s;dbname=%s;charset=%s',
-            $host,
-            $port,
-            $database,
-            $charset !== '' ? $charset : 'utf8mb4',
+        return MySqlLink::open(
+            [
+                'host' => $config['host'],
+                'port' => $config['port'],
+                'database' => $config['database'],
+                'username' => $config['username'],
+                'password' => $config['password'],
+                'charset' => $charset !== '' ? $charset : 'utf8mb4',
+            ],
+            $this->loop,
+            $this->poller(),
+            $this->now(),
         );
+    }
+
+    public function reset(): void
+    {
+        $this->poller?->reset();
+
+        parent::reset();
+    }
+
+    private function poller(): MySqlPoller
+    {
+        return $this->poller ??= new MySqlPoller($this->loop);
     }
 }

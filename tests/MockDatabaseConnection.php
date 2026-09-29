@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Atria\Database\Contracts\DatabaseConnection;
+use Atria\Database\Result;
 
 class MockDatabaseConnection implements DatabaseConnection
 {
@@ -75,17 +76,14 @@ class MockDatabaseConnection implements DatabaseConnection
         $this->transactionOpen = false;
     }
 
-    public function execute(string $query, array $bindings = []): PDOStatement|bool
+    public function execute(string $query, array $bindings = []): Result
     {
         $this->executedQueries[] = $query;
         $this->executedBindings[] = $bindings;
 
-        $rows = [];
-        foreach ($this->returnRows as $row) {
-            $rows[] = $row;
-        }
+        $rows = array_values($this->returnRows);
 
-        return new MockPDOStatement($rows, array_shift($this->affectedRows) ?? count($rows));
+        return new Result($rows, array_shift($this->affectedRows) ?? count($rows));
     }
 
     private function __clone() {}
@@ -95,27 +93,4 @@ class MockDatabaseConnection implements DatabaseConnection
         return [];
     }
     public function __wakeup(): void {}
-}
-
-class MockPDOStatement extends PDOStatement
-{
-    /** @var array<int, array<string, mixed>> */
-    private array $rows;
-
-    /** @param array<int, array<string, mixed>> $rows */
-    public function __construct(array $rows = [], private int $affected = 0)
-    {
-        $this->rows = $rows;
-    }
-
-    public function rowCount(): int
-    {
-        return $this->affected;
-    }
-
-    /** @return array<int, array<string, mixed>> */
-    public function fetchAll(int $mode = PDO::FETCH_DEFAULT, mixed ...$args): array
-    {
-        return $this->rows;
-    }
 }

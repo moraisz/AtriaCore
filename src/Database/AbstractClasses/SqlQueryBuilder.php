@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Atria\Database\AbstractClasses;
 
-use PDO;
-use PDOStatement;
 use Atria\Database\Contracts\QueryBuilder;
 use Atria\Database\Contracts\DatabaseConnection;
 
@@ -377,7 +375,7 @@ abstract class SqlQueryBuilder implements QueryBuilder
 
     /**
      * Executes the built query and returns the resulting rows.
-     * Shared across dialects since it only depends on the PDO connection.
+     * Shared across dialects since it only depends on the connection contract.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -389,19 +387,17 @@ abstract class SqlQueryBuilder implements QueryBuilder
             return $result;
         }
 
-        $stmt = $this->dbConnection->execute($this->getQuery(), $this->bindings);
-        /** @var array<int, array<string, mixed>> $result */
-        $result = ($stmt instanceof PDOStatement) ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+        $result = $this->dbConnection->execute($this->getQuery(), $this->bindings)->rows;
         $this->reset();
         return $result;
     }
 
     public function affected(): int
     {
-        $stmt = $this->dbConnection->execute($this->getQuery(), $this->bindings);
+        $affected = $this->dbConnection->execute($this->getQuery(), $this->bindings)->affectedRows;
         $this->reset();
 
-        return $stmt instanceof PDOStatement ? $stmt->rowCount() : 0;
+        return $affected;
     }
 
     public function transaction(\Closure $callback): mixed
@@ -444,11 +440,7 @@ abstract class SqlQueryBuilder implements QueryBuilder
             return [];
         }
 
-        $stmt = $this->dbConnection->execute("SELECT * FROM {$table} WHERE id = ?", [$id]);
-        /** @var array<int, array<string, mixed>> $result */
-        $result = ($stmt instanceof PDOStatement) ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
-
-        return $result;
+        return $this->dbConnection->execute("SELECT * FROM {$table} WHERE id = ?", [$id])->rows;
     }
 
     public function first(): ?array
@@ -479,9 +471,7 @@ abstract class SqlQueryBuilder implements QueryBuilder
     {
         $this->reset();
 
-        $stmt = $this->dbConnection->execute($sql, $bindings);
-        /** @var array<int, array<string, mixed>> $result */
-        $result = ($stmt instanceof PDOStatement) ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+        $result = $this->dbConnection->execute($sql, $bindings)->rows;
 
         $this->reset();
 

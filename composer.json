@@ -11,6 +11,11 @@
         "pestphp/pest": "^5.1",
         "phpstan/phpstan": "^2.2"
     },
+    "suggest": {
+        "ext-pgsql": "Required by the pgsql database driver.",
+        "ext-mysqli": "Required by the mysql and mariadb database drivers.",
+        "ext-sqlite3": "Required by the sqlite database driver."
+    },
     "autoload": {
         "psr-4": {
             "Atria\\": "src/"
