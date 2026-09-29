@@ -22,14 +22,29 @@ using the current project's `config/` directory and delegates commands to
 
 For each request, the runtime follows this sequence:
 
-1. Start the PHP session when needed.
-2. Build an `Atria\Http\Request` from PHP globals.
-3. Match the request method and path against registered routes.
-4. Resolve route middleware and the controller through the container.
-5. Execute middleware around the route callback.
-6. Send the resulting `Atria\Http\Response`.
-7. Route any exception through `HttpExceptionHandler`.
-8. Close the session and release request-scoped state in a `finally` block.
+1. Build an `Atria\Http\Request` from PHP globals.
+2. Match the request method and path against registered routes.
+3. Resolve route middleware and the controller through the container.
+4. Execute middleware around the route callback.
+5. Send the resulting `Atria\Http\Response`.
+6. Route any exception through `HttpExceptionHandler`.
+7. Close the session, if the request opened one, and release request-scoped state in a
+   `finally` block.
+
+## Sessions
+
+The PHP session starts lazily. `Atria\Http\Session` opens it on the first `get()`,
+`put()`, `pull()` or `forget()`; CSRF tokens and the exception handler's flash message go
+through it. Requests that never touch the session create no session file, send no
+cookie and take no session lock. Starting the session on every request made each
+cookie-less request (APIs, health checks, first visits, and every request over plain HTTP
+while `session.cookie_secure` is on) write a new file, and PHP's session GC then scanned
+the growing directory: removing it multiplied throughput by 4 to 12 in Atria's
+benchmarks.
+
+Code must use `Session` instead of reading `$_SESSION` directly: after every request
+`Session::close()` writes the session and empties `$_SESSION`, so a worker never exposes
+one user's session to the next request.
 
 Route parameters use named placeholders such as `/users/{id}`. A route callback can be a
 callable or a `[ControllerClass::class, 'method']` pair. Middleware is executed in the
@@ -65,11 +80,44 @@ After every request, including an exception path, the container calls
 - All request-scoped instances are removed.
 - Each resolved singleton or scoped service implementing `Resettable` receives one
   `reset()` call.
-- PHP cycle collection runs before the next request.
+- The session is closed and `$_SESSION` emptied.
+- PHP cycle collection runs before the next request. Its cost was within benchmark noise,
+  so it stays on every request.
 
 Any persistent service that holds request data must either be registered as scoped or
 implement `Atria\System\Contracts\Resettable`. This is required to prevent state and
 memory from leaking across requests in worker mode.
+
+## Threads and Concurrency
+
+FrankenPHP runs each request on one PHP thread from start to finish; a worker thread only
+takes the next request after the handler returns. Throughput across requests therefore
+depends on the number of threads, not on Fibers. Atria's Caddyfiles read the thread
+settings from the environment (`FRANKENPHP_NUM_THREADS`, `FRANKENPHP_WORKERS`,
+`FRANKENPHP_MAX_THREADS`, `FRANKENPHP_MAX_WAIT_TIME`; `0` keeps FrankenPHP's automatic
+sizing of two threads per CPU). Requests that wait on I/O scale with more worker threads
+than CPUs; CPU-bound requests do not. Every worker thread keeps its own database
+connections, so size `FRANKENPHP_WORKERS` against the database's `max_connections`.
+
+Inside one request, independent I/O can overlap with `Atria\Async`:
+
+```php
+use Atria\Async\Async;
+
+[$user, $orders] = Async::concurrently(
+    fn() => User::findById($id),
+    fn() => Order::forUser($id),
+);
+```
+
+`Atria\Async\EventLoop` is a small loop of Fibers over `stream_select()`, with no
+external dependency. There is one loop per PHP thread, registered in the container as a
+`Resettable` singleton: after every request, including failed ones, pending callbacks,
+timers, stream watchers and suspended tasks are dropped. Code outside `Async::run()` blocks
+while waiting, exactly like synchronous code, so the loop is invisible until a request
+opts into `Async::concurrently()` or `Async::run()`. Only non-blocking I/O overlaps: the PostgreSQL
+and MySQL drivers suspend while waiting for the server, while SQLite runs the tasks one
+after another.
 
 ## Testing Lifecycle Behavior
 

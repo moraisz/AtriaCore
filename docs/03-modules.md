@@ -24,9 +24,12 @@ connection, a query builder and a schema grammar:
 
 | Driver | Connection | PHP extension |
 | --- | --- | --- |
-| `pgsql` | `PgSqlConnection` | `pdo_pgsql` (in the Core image) |
-| `sqlite` | `SqliteConnection` (`database` is a file path or `:memory:`; enables foreign keys) | `pdo_sqlite` |
-| `mysql`, `mariadb` | `MySqlConnection` (`charset` defaults to `utf8mb4`) | `pdo_mysql`, installed by the application image |
+| `pgsql` | `PgSqlConnection` (non-blocking, pooled) | `pgsql` |
+| `mysql`, `mariadb` | `MySqlConnection` (non-blocking queries, pooled; `charset` defaults to `utf8mb4`) | `mysqli` |
+| `sqlite` | `SqliteConnection` (`database` is a file path or `:memory:`; enables foreign keys) | `sqlite3` (bundled with PHP images) |
+
+Atria Core does not use PDO. Each driver talks to its database through the native PHP
+extension and fails at construction with a clear message when the extension is missing.
 
 Dialect differences stay inside the drivers. MySQL has no `RETURNING`: a single-row
 insert is read back through `lastInsertId()` and assumes an `id` primary key, a
@@ -56,21 +59,75 @@ Database configuration defines the default connection, connection details, model
 and migration path or paths. For CLI migrations, `Config` registers `Migrator` and adds
 the built-in Auth migrations when standard Auth migrations are enabled.
 
-The connection is a singleton that stays open across worker requests. PDO drivers extend
-`PdoConnection`, which is `Resettable`: after every request, including failed ones, it
-rolls back any transaction left open and closes the connection once the optional
-`max_lifetime` (seconds, `0` = never) has passed. A statement run outside a transaction is
-retried once on a fresh connection when the server dropped the old one; inside a
-transaction the error is rethrown.
+The connection is a singleton that stays open across worker requests and is `Resettable`:
+after every request, including failed ones, it rolls back any transaction left open and
+closes connections once the optional `max_lifetime` (seconds, `0` = never) has passed. A
+statement run outside a transaction is retried once on a fresh connection when the server
+dropped the old one; inside a transaction the error is rethrown.
 
-Prepared statements are native by default. A connection's `options` entry overrides the
-PDO attributes, for example `[PDO::ATTR_EMULATE_PREPARES => true]` behind a pooler in
-transaction mode without prepared statement support. `PDO::ATTR_ERRMODE` is always
-`ERRMODE_EXCEPTION`, because reconnects and request resets depend on exceptions.
+`DatabaseConnection::execute()` returns an `Atria\Database\Result` with `rows` and
+`affectedRows`. Every driver raises `Atria\Database\Exceptions\QueryException`, a
+`RuntimeException` whose `sqlState()` holds the SQLSTATE of the failure (class `08` means
+the connection failed). Results keep PHP types: integers, floats, booleans (PostgreSQL)
+and NULL come back as such, while `numeric`/`DECIMAL` values stay strings to keep their
+precision. Queries always use `?` placeholders.
 
-New drivers should extend `PdoConnection`, `SqlQueryBuilder` and `SchemaGrammar`, be
-registered through `Drivers`, and be added to the `drivers` dataset in
-`tests/Integration/Database/DriverTest.php`.
+### Concurrent queries
+
+PostgreSQL and MySQL connections extend `PooledConnection`. Outside `Async::concurrently()` they
+behave like one persistent connection. Inside `Async::concurrently()` each task borrows its own
+connection from a per-worker pool of up to `pool_size` connections (default 4), opened on
+demand and kept across requests, so independent queries run at the same time:
+
+```php
+use Atria\Async\Async;
+
+[$orders, $stats] = Async::concurrently(
+    fn() => Order::forUser($id),
+    fn() => Stats::forUser($id),
+);
+```
+
+A transaction pins its connection to the task, or the main flow, that opened it, and
+`lastInsertId()` reads the connection that ran the caller's last statement. Starting
+concurrent queries while the main flow holds a transaction throws a `LogicException`,
+since the other connections would not see its uncommitted changes. After each request the
+pool rolls back a leaked transaction and closes connections left mid-query.
+
+Size the database for the worst case: `worker threads x pool_size` connections.
+
+- PostgreSQL (`ext-pgsql`) connects and queries without blocking the thread. Queries go
+  through `pg_send_query_params` with unnamed statements, which also works behind
+  PgBouncer in transaction mode. `?` is rewritten to `$1..$n` outside literals,
+  identifiers and comments; `??` is a literal `?`, e.g. for the jsonb `?` operator.
+- MySQL (`ext-mysqli`) uses native prepared statements outside `Async::run()` tasks. Inside a
+  task, mysqli only supports plain-text asynchronous queries, so values are escaped into
+  the SQL with `real_escape_string()` on the connection charset, and a 1 ms timer polls
+  the pending connections with `mysqli::poll()`. Connecting is blocking in mysqli; the
+  pool keeps connections open across requests to pay that cost once.
+- SQLite (`ext-sqlite3`) works on a local file without an asynchronous API: tasks inside
+  `Async::concurrently()` run their queries one after another. Writes with `RETURNING` run inside
+  a savepoint, because ext-sqlite3 would otherwise apply them twice.
+
+Upgrading to 2.0:
+
+- PDO is gone. Install the `pgsql`, `mysqli` or `sqlite3` extension instead of the
+  `pdo_*` one. The `options` connection entry (PDO attributes) no longer exists.
+- `DatabaseConnection::execute()` returns `Result` instead of `PDOStatement|bool`: read
+  `->rows` and `->affectedRows` instead of calling `fetchAll()` or `rowCount()`.
+- Database errors are `QueryException` (a `RuntimeException`) instead of `PDOException`;
+  update `catch` blocks and read the SQLSTATE with `sqlState()`.
+- `getConnection()` no longer returns `PDO`: PostgreSQL and MySQL return the
+  `ConnectionLink` of the caller's open transaction (or null), SQLite its `SQLite3` object.
+- `PdoConnection` was removed: custom drivers extend `PooledConnection` with a
+  `ConnectionLink`, or implement `DatabaseConnection` directly.
+- The PHP session starts lazily: code reading `$_SESSION` directly must go through
+  `Atria\Http\Session` (see the runtime lifecycle).
+
+New drivers should provide a connection (a `PooledConnection` with its `ConnectionLink`
+when the database supports asynchronous queries), a `SqlQueryBuilder` and a
+`SchemaGrammar`, be registered through `Drivers`, and be added to the `drivers` dataset
+in `tests/Integration/Database/DriverTest.php` (and to `ConcurrencyTest` when pooled).
 
 Upgrading from the PostgreSQL-only layer: `DatabaseConnection` gained `inTransaction()`
 and `lastInsertId()`, `QueryBuilder` gained `affected()` and `transaction()`, and
@@ -89,7 +146,9 @@ configuration opts into the standard schema.
 
 ## CSRF
 
-`CsrfManager` is registered as a singleton. Views use it to produce escaped CSRF tokens,
+`CsrfManager` is registered as a singleton and stores its token through
+`Atria\Http\Session`, which starts the session only when a token is read or written.
+Views use it to produce escaped CSRF tokens,
 and `CsrfMiddleware` validates protected requests. Keep token generation and validation
 inside this module instead of duplicating session-token handling in controllers.
 
