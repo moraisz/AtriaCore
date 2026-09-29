@@ -12,6 +12,7 @@ use Atria\Database\Drivers;
 use Atria\Database\Migrator;
 use Atria\Database\Schema\Schema;
 use Atria\Http\Router;
+use Atria\Http\Session;
 use Atria\Modules\Auth\AuthConfig;
 use Atria\Modules\Auth\AuthManager;
 use Atria\Modules\Auth\Services\AuthTokenService;
@@ -291,7 +292,11 @@ class Config
 
     private function configureCsrf(Container $container): void
     {
-        $container->singleton(CsrfManager::class, fn(): CsrfManager => new CsrfManager());
+        $container->singleton(Session::class, fn(): Session => new Session());
+        $container->singleton(
+            CsrfManager::class,
+            fn(): CsrfManager => new CsrfManager($this->requireService($container, Session::class)),
+        );
     }
 
     private function configureView(Container $container): void

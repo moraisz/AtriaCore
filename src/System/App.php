@@ -10,6 +10,7 @@ use Atria\Database\Migrator;
 use Atria\System\Container;
 use Atria\System\Config;
 use Atria\Http\Router;
+use Atria\Http\Session;
 use Atria\System\Contracts\WorkerRuntime;
 
 class App
@@ -82,12 +83,6 @@ class App
         $request = null;
 
         try {
-            $frankenConfig = $this->config->getFrankenConfig();
-
-            if (session_status() !== PHP_SESSION_ACTIVE) {
-                session_start();
-            }
-
             // get all request data
             $request = Request::createFromGlobals();
 
@@ -106,9 +101,8 @@ class App
             $errorResponse = $exceptionHandler->handle($e, $request);
             $errorResponse->send();
         } finally {
-            if (session_status() === PHP_SESSION_ACTIVE) {
-                session_write_close();
-            }
+            // The session starts lazily (Atria\Http\Session); close it if this request used it.
+            new Session()->close();
 
             $this->container->flushRequestScope();
             gc_collect_cycles();

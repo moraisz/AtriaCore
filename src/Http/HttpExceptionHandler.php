@@ -11,7 +11,12 @@ use Atria\Modules\Csrf\CsrfManager;
 
 final class HttpExceptionHandler
 {
-    public function __construct(private readonly CsrfManager $csrfManager) {}
+    private readonly Session $session;
+
+    public function __construct(private readonly CsrfManager $csrfManager, ?Session $session = null)
+    {
+        $this->session = $session ?? new Session();
+    }
 
     public function handle(\Throwable $exception, ?Request $request): Response
     {
@@ -26,7 +31,7 @@ final class HttpExceptionHandler
             && $request?->getMethod() === 'POST'
             && !$request->isJson()
         ) {
-            $_SESSION['error'] = $exception->getMessage();
+            $this->session->put('error', $exception->getMessage());
             return new Response()->redirect($this->redirectPath($request));
         }
 
