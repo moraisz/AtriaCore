@@ -5,6 +5,19 @@ All notable changes to Atria Core are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0](https://github.com/moraisz/AtriaCore/compare/v0.1.0...v1.0.0) (2026-09-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* **database:** DatabaseConnection requires inTransaction() and lastInsertId(); QueryBuilder requires affected() and transaction(); Migrator takes a Schema as its second constructor argument.
+
+### Features
+
+* **database:** add SQLite and MySQL drivers ([b38b490](https://github.com/moraisz/AtriaCore/commit/b38b49061a4996536008a0872735f9446041546a))
+* **database:** max_lifetime db connection ([552c503](https://github.com/moraisz/AtriaCore/commit/552c503d71051dbb3fd61a421a65f5f1f7727a82))
+* **database:** override PDO options connection ([bc15443](https://github.com/moraisz/AtriaCore/commit/bc15443cd92a99b7e84aad74bb8d319fb4ad1783))
+
 ## [0.1.0](https://github.com/moraisz/AtriaCore/compare/v0.1.0-alpha...v0.1.0) (2026-09-27)
 
 
