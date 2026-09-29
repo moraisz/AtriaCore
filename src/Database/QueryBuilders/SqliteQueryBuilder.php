@@ -6,8 +6,13 @@ namespace Atria\Database\QueryBuilders;
 
 use Atria\Database\AbstractClasses\SqlQueryBuilder;
 
-class PgSqlQueryBuilder extends SqlQueryBuilder
+class SqliteQueryBuilder extends SqlQueryBuilder
 {
+    protected function unboundedLimit(): ?string
+    {
+        return '-1';
+    }
+
     public function createIndex(string $indexName, string $tableName, array $columns): self
     {
         $cols = implode(', ', $columns);
@@ -18,7 +23,7 @@ class PgSqlQueryBuilder extends SqlQueryBuilder
     public function createUniqueIndex(string $indexName, string $tableName, array $columns): self
     {
         $cols = implode(', ', $columns);
-        $this->dbConnection->execute("CREATE UNIQUE INDEX {$indexName} ON {$tableName} ({$cols})", []);
+        $this->dbConnection->execute("CREATE UNIQUE INDEX IF NOT EXISTS {$indexName} ON {$tableName} ({$cols})", []);
         return $this;
     }
 

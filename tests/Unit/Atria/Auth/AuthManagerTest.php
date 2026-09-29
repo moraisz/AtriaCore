@@ -97,10 +97,14 @@ test('refresh rotates atomically and preserves absolute expiration', function ()
 
     expect($rotated['access_token'])->toBeString();
     expect($rotated['refresh_token'])->toBeString();
-    expect($connection->executedQueries[1])->toContain('WITH consumed AS');
+    expect($connection->executedQueries[1])->toBe(
+        'UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND token_hash = ? AND revoked_at IS NULL AND expires_at > ?',
+    );
     expect($connection->executedBindings[1][1])->toBe(7);
-    expect($connection->executedBindings[1][5])->toBe('curl');
-    expect($connection->executedBindings[1][6])->toBe(date('Y-m-d H:i:s', $sessionExpiresAt));
+    expect($connection->executedQueries[2])->toStartWith('INSERT INTO refresh_tokens');
+    expect($connection->executedBindings[2][2])->toBe('curl');
+    expect($connection->executedBindings[2][3])->toBe(date('Y-m-d H:i:s', $sessionExpiresAt));
+    expect($connection->inTransaction())->toBeFalse();
 });
 
 test('refresh throws when the token was revoked or replayed', function () {
@@ -108,7 +112,12 @@ test('refresh throws when the token was revoked or replayed', function () {
     $manager = coreAuthManager($connection)['manager'];
     $pair = $manager->issuePairForUser(new AuthenticatedPrincipal(7, 'user@test.com'));
 
-    $manager->refresh($pair['refresh_token']);
+    try {
+        $manager->refresh($pair['refresh_token']);
+    } finally {
+        expect($connection->executedQueries)->toHaveCount(2);
+        expect($connection->inTransaction())->toBeFalse();
+    }
 })->throws(InvalidRefreshTokenException::class, 'Refresh token not found or revoked');
 
 test('refresh throws on expired token', function () {

@@ -155,6 +155,21 @@ class MockQueryBuilder implements QueryBuilder
     {
         return $this->returnRows !== [];
     }
+    /** @var array<int, int> */
+    public array $affectedSequence = [];
+
+    public function affected(): int
+    {
+        $this->log[] = ['method' => 'affected'];
+        return array_shift($this->affectedSequence) ?? 0;
+    }
+
+    public function transaction(Closure $callback): mixed
+    {
+        $this->log[] = ['method' => 'transaction'];
+        return $callback($this);
+    }
+
     public function statement(string $sql, array $bindings = []): array
     {
         $this->log[] = ['method' => 'statement', 'sql' => $sql, 'bindings' => $bindings];

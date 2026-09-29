@@ -5,7 +5,7 @@
 # Atria Core
 
 Atria Core is the PHP runtime behind the Atria framework. It provides HTTP routing,
-dependency injection, configuration, PostgreSQL migrations, auth, CSRF, views, Vite,
+dependency injection, configuration, SQL database drivers (PostgreSQL, SQLite, MySQL/MariaDB) with portable migrations, auth, CSRF, views, Vite,
 Mercure, and FrankenPHP Go extension sources.
 
 ## Developer Documentation

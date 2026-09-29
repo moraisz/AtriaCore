@@ -34,6 +34,19 @@ application, implement it in Atria instead.
 Tests use Pest. Place isolated behavior in `tests/Unit/` and interactions between runtime
 components in `tests/Feature/`. Reuse or add focused fixtures under `tests/Fixtures/`.
 
+`tests/Integration/Database/` runs against real databases. SQLite always runs in memory.
+PostgreSQL and MySQL run only when `DB_TEST_PGSQL_HOST` / `DB_TEST_MYSQL_HOST` are set,
+together with the matching `_PORT`, `_DATABASE`, `_USERNAME` and `_PASSWORD` variables;
+CI provides both services. Locally:
+
+```bash
+docker run -d --rm --name atria-it-pg -e POSTGRES_USER=atria -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=atria -p 55432:5432 postgres:17
+docker run -d --rm --name atria-it-mysql -e MYSQL_ROOT_PASSWORD=secret -e MYSQL_DATABASE=atria -e MYSQL_USER=atria -e MYSQL_PASSWORD=secret -p 53306:3306 mysql:8.4
+DB_TEST_PGSQL_HOST=127.0.0.1 DB_TEST_PGSQL_PORT=55432 DB_TEST_PGSQL_DATABASE=atria DB_TEST_PGSQL_USERNAME=atria DB_TEST_PGSQL_PASSWORD=secret \
+DB_TEST_MYSQL_HOST=127.0.0.1 DB_TEST_MYSQL_PORT=53306 DB_TEST_MYSQL_DATABASE=atria DB_TEST_MYSQL_USERNAME=atria DB_TEST_MYSQL_PASSWORD=secret \
+./vendor/bin/pest tests/Integration
+```
+
 Avoid requiring Docker or FrankenPHP when a fake runtime, mock, or fixture can verify the
 Core contract. For view tests that invoke Vite helpers, choose the fixture mode explicitly:
 

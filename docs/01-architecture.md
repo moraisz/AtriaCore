@@ -32,7 +32,7 @@ The main namespaces in `src/` are:
 | --- | --- |
 | `Atria\System` | Application bootstrap, configuration, service container, and worker runtime. |
 | `Atria\Http` | Requests, responses, routes, controllers, middleware, and exception handling. |
-| `Atria\Database` | Database contracts, PostgreSQL implementation, models, query builder, and migrations. |
+| `Atria\Database` | Database contracts, PostgreSQL/SQLite/MySQL drivers, models, query builders, schema builder, and migrations. |
 | `Atria\Modules` | Optional framework services such as Auth, CSRF, Mercure, View, and Vite. |
 | `Atria\Helpers` | Small shared utilities. |
 

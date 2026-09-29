@@ -315,6 +315,8 @@ abstract class SqlQueryBuilder implements QueryBuilder
 
         if ($this->limit !== null) {
             $sql .= ($sql ? ' ' : '') . "LIMIT {$this->limit}";
+        } elseif ($this->offset !== null && $this->unboundedLimit() !== null) {
+            $sql .= ($sql ? ' ' : '') . 'LIMIT ' . $this->unboundedLimit();
         }
 
         if ($this->offset !== null) {
@@ -322,6 +324,14 @@ abstract class SqlQueryBuilder implements QueryBuilder
         }
 
         return $sql;
+    }
+
+    /**
+     * LIMIT value meaning "no limit" for dialects that reject OFFSET without LIMIT.
+     */
+    protected function unboundedLimit(): ?string
+    {
+        return null;
     }
 
     protected function buildInsertClause(): string
@@ -373,10 +383,71 @@ abstract class SqlQueryBuilder implements QueryBuilder
      */
     public function execute(): array
     {
+        if ($this->insertTable !== '' && !$this->supportsReturning()) {
+            $result = $this->executeInsertWithoutReturning();
+            $this->reset();
+            return $result;
+        }
+
         $stmt = $this->dbConnection->execute($this->getQuery(), $this->bindings);
         /** @var array<int, array<string, mixed>> $result */
         $result = ($stmt instanceof PDOStatement) ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
         $this->reset();
+        return $result;
+    }
+
+    public function affected(): int
+    {
+        $stmt = $this->dbConnection->execute($this->getQuery(), $this->bindings);
+        $this->reset();
+
+        return $stmt instanceof PDOStatement ? $stmt->rowCount() : 0;
+    }
+
+    public function transaction(\Closure $callback): mixed
+    {
+        if ($this->dbConnection->inTransaction()) {
+            return $callback($this);
+        }
+
+        $this->dbConnection->beginTransaction();
+
+        try {
+            $result = $callback($this);
+            $this->dbConnection->commit();
+        } catch (\Throwable $e) {
+            if ($this->dbConnection->inTransaction()) {
+                $this->dbConnection->rollback();
+            }
+
+            throw $e;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Runs an INSERT on dialects without RETURNING. A single-row insert is read
+     * back through the generated id, which assumes an `id` primary key.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    protected function executeInsertWithoutReturning(): array
+    {
+        $table = $this->insertTable;
+        $singleRow = count($this->insertValues) === 1;
+
+        $this->dbConnection->execute($this->getQuery(), $this->bindings);
+
+        $id = $this->dbConnection->lastInsertId();
+        if (!$singleRow || $id === null) {
+            return [];
+        }
+
+        $stmt = $this->dbConnection->execute("SELECT * FROM {$table} WHERE id = ?", [$id]);
+        /** @var array<int, array<string, mixed>> $result */
+        $result = ($stmt instanceof PDOStatement) ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+
         return $result;
     }
 
@@ -417,8 +488,24 @@ abstract class SqlQueryBuilder implements QueryBuilder
         return $result;
     }
 
+    /**
+     * Whether the dialect supports a RETURNING clause on INSERT/UPDATE/DELETE.
+     */
+    protected function supportsReturning(): bool
+    {
+        return true;
+    }
+
     protected function buildReturningClause(bool $defaultInsertReturning = false): string
     {
+        if (!$this->supportsReturning()) {
+            if ($this->returning !== []) {
+                throw new \LogicException(static::class . ' does not support RETURNING clauses');
+            }
+
+            return '';
+        }
+
         if ($this->returning !== []) {
             return ' RETURNING ' . implode(', ', $this->returning);
         }
@@ -431,11 +518,43 @@ abstract class SqlQueryBuilder implements QueryBuilder
     // ---------------------------------------------------------------
 
     /**
-     * Returns the raw SQL query string built so far.
-     * Left abstract because final composition, identifier quoting,
-     * and clauses like RETURNING differ between dialects.
+     * Returns the raw SQL query string built so far. Dialects adjust it through
+     * supportsReturning() and buildOrderByLimitOffsetClause().
      */
-    abstract public function getQuery(): string;
+    public function getQuery(): string
+    {
+        $parts = array_filter([
+            $this->buildSelectClause(),
+            $this->buildUpdateClause(),
+            $this->buildDeleteClause(),
+            $this->buildWhereClause(),
+            $this->buildOrderByLimitOffsetClause(),
+        ]);
+
+        $sql = implode(' ', $parts);
+
+        // INSERT and CREATE/DROP TABLE are mutually exclusive with the above in this design
+        $insert = $this->buildInsertClause();
+        if ($insert !== '') {
+            $sql = $insert . $this->buildReturningClause(true);
+        }
+
+        if ($insert === '' && $sql !== '' && ($this->updateTable !== '' || $this->deleteFrom !== '')) {
+            $sql .= $this->buildReturningClause();
+        }
+
+        $createTable = $this->buildCreateTableClause();
+        if ($createTable !== '') {
+            $sql = $createTable;
+        }
+
+        $dropTable = $this->buildDropTableClause();
+        if ($dropTable !== '') {
+            $sql = $dropTable;
+        }
+
+        return $sql;
+    }
 
     /**
      * Creates a regular (non-unique) index on one or more columns of a table.

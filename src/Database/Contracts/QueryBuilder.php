@@ -194,6 +194,21 @@ interface QueryBuilder
     public function execute(): array;
 
     /**
+     * Executes the built query and returns the number of affected rows.
+     */
+    public function affected(): int;
+
+    /**
+     * Runs the callback inside a transaction, committing on success and rolling
+     * back on any exception. Joins the current transaction when one is open.
+     *
+     * @template T
+     * @param \Closure(self): T $callback
+     * @return T
+     */
+    public function transaction(\Closure $callback): mixed;
+
+    /**
      * Executes a raw SQL statement with bindings and returns its rows.
      *
      * @param array<int, mixed> $bindings

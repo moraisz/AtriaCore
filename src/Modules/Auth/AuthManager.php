@@ -97,34 +97,36 @@ final class AuthManager
         $email = is_string($payload['email'] ?? null) ? $payload['email'] : '';
         $tokens = $this->tokenService->issuePair($userId, $email, $exp);
         $now = $this->databaseTimestamp(time());
-        $rotated = $this->queryBuilder()->statement(
-            <<<SQL
-                WITH consumed AS (
-                    UPDATE {$this->config->refreshTokensTable}
-                    SET revoked_at = ?
-                    WHERE user_id = ?
-                      AND token_hash = ?
-                      AND revoked_at IS NULL
-                      AND expires_at > ?
-                    RETURNING user_id
-                )
-                INSERT INTO {$this->config->refreshTokensTable} (user_id, token_hash, device_info, expires_at)
-                SELECT user_id, ?, ?, ?
-                FROM consumed
-                RETURNING user_id
-                SQL,
-            [
-                $now,
-                $userId,
-                hash('sha256', $jti),
-                $now,
-                $tokens['refresh_token_hash'],
-                $deviceInfo,
-                $this->databaseTimestamp($exp),
-            ],
+        $table = $this->config->refreshTokensTable;
+        $tokenHash = hash('sha256', $jti);
+
+        // The conditional UPDATE locks the token row, so a concurrent refresh
+        // with the same token consumes zero rows and fails.
+        $rotated = $this->queryBuilder()->transaction(
+            function (QueryBuilder $queryBuilder) use ($table, $now, $userId, $tokenHash, $tokens, $deviceInfo, $exp): bool {
+                $consumed = $queryBuilder
+                    ->update($table)
+                    ->set(['revoked_at' => $now])
+                    ->where('user_id', '=', $userId)
+                    ->where('token_hash', '=', $tokenHash)
+                    ->whereNull('revoked_at')
+                    ->where('expires_at', '>', $now)
+                    ->affected();
+
+                if ($consumed !== 1) {
+                    return false;
+                }
+
+                $queryBuilder
+                    ->insertInto($table, ['user_id', 'token_hash', 'device_info', 'expires_at'])
+                    ->values([$userId, $tokens['refresh_token_hash'], $deviceInfo, $this->databaseTimestamp($exp)])
+                    ->execute();
+
+                return true;
+            },
         );
 
-        if ($rotated === []) {
+        if (!$rotated) {
             throw new InvalidRefreshTokenException('Refresh token not found or revoked');
         }
 

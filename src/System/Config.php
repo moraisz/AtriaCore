@@ -9,6 +9,7 @@ use Atria\Database\Contracts\QueryBuilder;
 use Atria\Database\AbstractClasses\Model;
 use Atria\Database\Drivers;
 use Atria\Database\Migrator;
+use Atria\Database\Schema\Schema;
 use Atria\Http\Router;
 use Atria\Modules\Auth\AuthConfig;
 use Atria\Modules\Auth\AuthManager;
@@ -121,6 +122,17 @@ class Config
 
         $container->bind(QueryBuilder::class, $resolved['query_builder']);
 
+        $container->bind(
+            Schema::class,
+            static function () use ($container, $resolved): Schema {
+                /** @var DatabaseConnection $connection */
+                $connection = $container->make(DatabaseConnection::class);
+                $grammar = $resolved['schema_grammar'];
+
+                return new Schema($connection, new $grammar());
+            },
+        );
+
         Model::setResolver(function () use ($container): QueryBuilder {
             /** @var QueryBuilder $qb */
             $qb = $container->make(QueryBuilder::class);
@@ -136,7 +148,10 @@ class Config
                     /** @var QueryBuilder $queryBuilder */
                     $queryBuilder = $container->make(QueryBuilder::class);
 
-                    return new Migrator($queryBuilder, $migrationPaths);
+                    /** @var Schema $schema */
+                    $schema = $container->make(Schema::class);
+
+                    return new Migrator($queryBuilder, $schema, $migrationPaths);
                 },
             );
         }
