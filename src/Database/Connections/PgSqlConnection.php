@@ -4,23 +4,40 @@ declare(strict_types=1);
 
 namespace Atria\Database\Connections;
 
-use Atria\Database\AbstractClasses\PdoConnection;
-use PDOException;
+use Atria\Database\AbstractClasses\PooledConnection;
+use Atria\Database\Contracts\ConnectionLink;
 
-class PgSqlConnection extends PdoConnection
+/**
+ * PostgreSQL through ext-pgsql. Connecting and waiting for results never
+ * block the thread, so queries inside Async::concurrently() run at the same time.
+ */
+class PgSqlConnection extends PooledConnection
 {
-    protected function dsn(): string
+    protected function requiredExtension(): string
     {
-        $host = $this->configString('host') ?? '';
-        $port = $this->configString('port') ?? '';
-        $database = $this->configString('database') ?? '';
-        $username = $this->configString('username') ?? '';
-        $password = $this->configString('password') ?? '';
+        return 'pgsql';
+    }
 
-        if ($host === '' || $port === '' || $database === '' || $username === '' || $password === '') {
-            throw new PDOException('Missing required database connection parameters');
+    protected function openLink(): ConnectionLink
+    {
+        return PgSqlLink::open($this->dsn(), $this->loop, $this->now());
+    }
+
+    protected function prepareSql(string $query): string
+    {
+        return PgSqlPlaceholders::convert($query);
+    }
+
+    private function dsn(): string
+    {
+        $config = $this->requireConfig(['host', 'port', 'database', 'username', 'password']);
+        $names = ['host' => 'host', 'port' => 'port', 'database' => 'dbname', 'username' => 'user', 'password' => 'password'];
+
+        $parts = [];
+        foreach ($names as $key => $name) {
+            $parts[] = $name . "='" . addcslashes($config[$key], "'\\") . "'";
         }
 
-        return sprintf('pgsql:host=%s;port=%s;dbname=%s', $host, $port, $database);
+        return implode(' ', $parts);
     }
 }

@@ -17,8 +17,9 @@ use Atria\Modules\Auth\Services\AuthTokenService;
 /*
  * Runs against real databases. SQLite always runs in memory; PostgreSQL and
  * MySQL run only when DB_TEST_{PGSQL,MYSQL}_HOST is set, using the matching
- * _PORT, _DATABASE, _USERNAME and _PASSWORD variables. A `+emulated` suffix
- * runs the same driver with PDO::ATTR_EMULATE_PREPARES enabled.
+ * _PORT, _DATABASE, _USERNAME and _PASSWORD variables. Each driver also needs
+ * its PHP extension (sqlite3, pgsql or mysqli). The asynchronous query paths
+ * are covered by ConcurrencyTest.
  */
 
 final class IntegrationItem extends Model
@@ -37,9 +38,13 @@ final class IntegrationItem extends Model
 /**
  * @return array{connection: DatabaseConnection, queryBuilder: Closure(): QueryBuilder, schema: Schema}|null
  */
-function integrationDriver(string $variant): ?array
+function integrationDriver(string $driver): ?array
 {
-    [$driver, $mode] = explode('+', $variant) + [1 => ''];
+    $extension = ['sqlite' => 'sqlite3', 'pgsql' => 'pgsql', 'mysql' => 'mysqli'][$driver];
+
+    if (!extension_loaded($extension)) {
+        return null;
+    }
 
     if ($driver === 'sqlite') {
         $config = ['database' => ':memory:'];
@@ -59,10 +64,6 @@ function integrationDriver(string $variant): ?array
         ];
     }
 
-    if ($mode === 'emulated') {
-        $config['options'] = [PDO::ATTR_EMULATE_PREPARES => true];
-    }
-
     $resolved = Drivers::resolve($driver);
     assert($resolved !== null);
 
@@ -80,11 +81,11 @@ function integrationDriver(string $variant): ?array
 /**
  * @return array{connection: DatabaseConnection, queryBuilder: Closure(): QueryBuilder, schema: Schema}
  */
-function freshIntegrationDatabase(string $variant): array
+function freshIntegrationDatabase(string $driver): array
 {
-    $db = integrationDriver($variant);
+    $db = integrationDriver($driver);
     if ($db === null) {
-        test()->markTestSkipped('DB_TEST_' . strtoupper(explode('+', $variant)[0]) . '_HOST is not set');
+        test()->markTestSkipped("{$driver}: DB_TEST_*_HOST is not set or the PHP extension is missing");
     }
 
     foreach (['refresh_tokens', 'users', 'integration_items', 'migrations'] as $table) {
@@ -125,7 +126,7 @@ function integrationAuthManager(Closure $queryBuilder): AuthManager
     );
 }
 
-dataset('drivers', ['sqlite', 'pgsql', 'mysql', 'pgsql+emulated', 'mysql+emulated']);
+dataset('drivers', ['sqlite', 'pgsql', 'mysql']);
 
 test('model create returns the inserted row', function (string $driver) {
     freshIntegrationDatabase($driver);

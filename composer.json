@@ -11,6 +11,12 @@
         "pestphp/pest": "^5.1",
         "phpstan/phpstan": "^2.2"
     },
+    "suggest": {
+        "ext-pgsql": "Required by the pgsql database driver.",
+        "ext-mysqli": "Required by the mysql and mariadb database drivers.",
+        "ext-sqlite3": "Required by the sqlite database driver.",
+        "ext-curl": "Required by Atria\\Http\\Client\\HttpClient."
+    },
     "autoload": {
         "psr-4": {
             "Atria\\": "src/"
@@ -28,11 +34,20 @@
         "cs-fix": "php-cs-fixer fix",
         "cs-check": "php-cs-fixer fix --dry-run --diff",
         "phpstan": "phpstan analyse --memory-limit=2G",
-        "test": "pest"
+        "test": "pest",
+        "ci": [
+            "Composer\\Config::disableProcessTimeout",
+            "docker compose -f docker-compose.ci.yml run --rm --build php docker/ci/run.sh"
+        ],
+        "ci-down": "docker compose -f docker-compose.ci.yml down -v"
     },
     "config": {
         "allow-plugins": {
             "pestphp/pest-plugin": true
         }
+    },
+    "scripts-descriptions": {
+        "ci": "Run the CI pipeline (validate, install, audit, cs-check, phpstan, tests with PostgreSQL and MySQL) in Docker.",
+        "ci-down": "Stop and remove the local CI containers and volumes."
     }
 }

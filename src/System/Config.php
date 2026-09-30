@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace Atria\System;
 
+use Atria\Async\EventLoop;
 use Atria\Database\Contracts\DatabaseConnection;
 use Atria\Database\Contracts\QueryBuilder;
 use Atria\Database\AbstractClasses\Model;
 use Atria\Database\Drivers;
 use Atria\Database\Migrator;
 use Atria\Database\Schema\Schema;
+use Atria\Http\Client\HttpClient;
 use Atria\Http\Router;
+use Atria\Http\Session;
 use Atria\Modules\Auth\AuthConfig;
 use Atria\Modules\Auth\AuthManager;
 use Atria\Modules\Auth\Services\AuthTokenService;
@@ -56,6 +59,8 @@ class Config
     public function configureApp(Container $container, Router $router): void
     {
         $this->configureContainer($container);
+        $this->configureEventLoop($container);
+        $this->configureHttpClient($container);
         $this->configureAuthConfig();
         $this->configureDatabase($container);
         $this->configureFranken();
@@ -95,6 +100,27 @@ class Config
 
         foreach ($containerConfig['scoped'] ?? [] as $interface => $implementation) {
             $container->scoped($interface, $implementation);
+        }
+    }
+
+    /**
+     * Registers the thread's event loop and resolves it right away, so
+     * flushRequestScope() resets it after every request, even when only
+     * Async::run() or Async::concurrently() used it.
+     */
+    private function configureEventLoop(Container $container): void
+    {
+        $container->singleton(EventLoop::class, static fn(): EventLoop => EventLoop::instance());
+        $container->make(EventLoop::class);
+    }
+
+    /**
+     * One client per worker, so its connections are reused across requests.
+     */
+    private function configureHttpClient(Container $container): void
+    {
+        if (extension_loaded('curl')) {
+            $container->singleton(HttpClient::class, static fn(): HttpClient => new HttpClient());
         }
     }
 
@@ -278,7 +304,11 @@ class Config
 
     private function configureCsrf(Container $container): void
     {
-        $container->singleton(CsrfManager::class, fn(): CsrfManager => new CsrfManager());
+        $container->singleton(Session::class, fn(): Session => new Session());
+        $container->singleton(
+            CsrfManager::class,
+            fn(): CsrfManager => new CsrfManager($this->requireService($container, Session::class)),
+        );
     }
 
     private function configureView(Container $container): void

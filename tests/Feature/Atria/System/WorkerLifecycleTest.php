@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
+use Atria\Async\EventLoop;
 use Atria\Http\AbstractClasses\Controller;
 use Atria\Http\Request;
 use Atria\Http\Response;
 use Atria\Http\Router;
+use Atria\Http\Session;
 use Atria\System\App;
 use Atria\System\Contracts\Resettable;
 use Atria\System\Contracts\WorkerRuntime;
@@ -39,10 +41,48 @@ final class WorkerLifecycleController extends Controller
     }
 }
 
+final class WorkerLifecycleProbe
+{
+    /** @var list<array{path: string, session_active: bool, session: array<mixed>, pending_async: bool}> */
+    public static array $observed = [];
+
+    public static function observe(string $path): void
+    {
+        self::$observed[] = [
+            'path' => $path,
+            'session_active' => session_status() === PHP_SESSION_ACTIVE,
+            'session' => $_SESSION ?? [],
+            'pending_async' => EventLoop::instance()->hasPendingWork(),
+        ];
+    }
+}
+
 final class WorkerLifecycleRoutes
 {
     public static function register(Router $router): void
     {
+        $router->get('/session-write', static function (Request $request, Response $response): Response {
+            new Session()->put('user', 'previous');
+
+            return $response->json(['ok' => true]);
+        });
+        $router->get('/probe', static function (Request $request, Response $response): Response {
+            WorkerLifecycleProbe::observe('/probe');
+
+            return $response->json(['ok' => true]);
+        });
+        $router->get('/async-fail', static function (): never {
+            $loop = EventLoop::instance();
+            $loop->async(static function () use ($loop): void {
+                $suspension = $loop->getSuspension();
+                $loop->delay(60, static fn() => $suspension->resume());
+                $suspension->suspend();
+            });
+            $loop->delay(0.001, static fn() => null);
+            $loop->tick();
+
+            throw new RuntimeException('Expected failure with a pending async task.');
+        });
         $router->get('/render', [WorkerLifecycleController::class, 'render']);
         $router->get('/fail', [WorkerLifecycleController::class, 'renderThenFail']);
         $router->get('/json', static fn(Request $request, Response $response): Response => $response->json(['ok' => true]));
@@ -98,6 +138,7 @@ beforeEach(function () {
     putenv('DB_CONNECTION=pgsql');
     putenv('MERCURE_ENABLED=0');
     WorkerLifecycleController::$payloadReference = null;
+    WorkerLifecycleProbe::$observed = [];
 });
 
 afterEach(function () {
@@ -177,4 +218,35 @@ test('worker releases view payloads after an exception', function () {
 
     expect(WorkerLifecycleController::$payloadReference)->not->toBeNull();
     expect(WorkerLifecycleController::$payloadReference?->get())->toBeNull();
+});
+
+test('requests that do not use the session never start one', function () {
+    $app = new App(workerLifecycleConfigPath(), new WorkerLifecycleFakeRuntime(['/probe']));
+
+    ob_start();
+    $app->run();
+    ob_end_clean();
+
+    expect(WorkerLifecycleProbe::$observed[0]['session_active'])->toBeFalse();
+});
+
+test('session data does not leak into the next request of the worker', function () {
+    $app = new App(workerLifecycleConfigPath(), new WorkerLifecycleFakeRuntime(['/session-write', '/probe']));
+
+    ob_start();
+    $app->run();
+    ob_end_clean();
+
+    expect(WorkerLifecycleProbe::$observed[0]['session_active'])->toBeFalse()
+        ->and(WorkerLifecycleProbe::$observed[0]['session'])->toBe([]);
+});
+
+test('a failed request does not leave async work for the next one', function () {
+    $app = new App(workerLifecycleConfigPath(), new WorkerLifecycleFakeRuntime(['/async-fail', '/probe']));
+
+    ob_start();
+    $app->run();
+    ob_end_clean();
+
+    expect(WorkerLifecycleProbe::$observed[0]['pending_async'])->toBeFalse();
 });

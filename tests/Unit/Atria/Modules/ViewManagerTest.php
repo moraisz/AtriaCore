@@ -131,13 +131,22 @@ test('section without endSection silently discards content', function () {
     file_put_contents($tmpDir . '/layout.php', '<?= $this->yield("content", "default") ?>');
 
     $view = createView($tmpDir);
-    $html = $view->render('broken');
+    $bufferLevel = ob_get_level();
+
+    try {
+        $html = $view->render('broken');
+    } finally {
+        // The unclosed section leaves its output buffer open; close it so the test is not risky.
+        while (ob_get_level() > $bufferLevel) {
+            ob_end_clean();
+        }
+    }
 
     expect($html)->toBe('default');
 
     array_map('unlink', glob($tmpDir . '/*.*') ?: []);
     rmdir($tmpDir);
-})->skip('Pest marks as risky due to nested ob_start in section without endSection');
+});
 
 test('endSection without open section throws', function () {
     $tmpDir = sys_get_temp_dir() . '/atria-core_view_test_' . uniqid();

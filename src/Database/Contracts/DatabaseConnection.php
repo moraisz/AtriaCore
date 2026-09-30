@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Atria\Database\Contracts;
 
-use PDOStatement;
+use Atria\Database\Result;
 
 interface DatabaseConnection
 {
@@ -31,7 +31,6 @@ interface DatabaseConnection
 
     /**
      * @param array<int,mixed> $bindings
-     * @return PDOStatement|bool
      */
-    public function execute(string $query, array $bindings): PDOStatement|bool;
+    public function execute(string $query, array $bindings): Result;
 }

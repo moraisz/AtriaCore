@@ -37,15 +37,8 @@ components in `tests/Feature/`. Reuse or add focused fixtures under `tests/Fixtu
 `tests/Integration/Database/` runs against real databases. SQLite always runs in memory.
 PostgreSQL and MySQL run only when `DB_TEST_PGSQL_HOST` / `DB_TEST_MYSQL_HOST` are set,
 together with the matching `_PORT`, `_DATABASE`, `_USERNAME` and `_PASSWORD` variables;
-CI provides both services. Locally:
-
-```bash
-docker run -d --rm --name atria-it-pg -e POSTGRES_USER=atria -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=atria -p 55432:5432 postgres:17
-docker run -d --rm --name atria-it-mysql -e MYSQL_ROOT_PASSWORD=secret -e MYSQL_DATABASE=atria -e MYSQL_USER=atria -e MYSQL_PASSWORD=secret -p 53306:3306 mysql:8.4
-DB_TEST_PGSQL_HOST=127.0.0.1 DB_TEST_PGSQL_PORT=55432 DB_TEST_PGSQL_DATABASE=atria DB_TEST_PGSQL_USERNAME=atria DB_TEST_PGSQL_PASSWORD=secret \
-DB_TEST_MYSQL_HOST=127.0.0.1 DB_TEST_MYSQL_PORT=53306 DB_TEST_MYSQL_DATABASE=atria DB_TEST_MYSQL_USERNAME=atria DB_TEST_MYSQL_PASSWORD=secret \
-./vendor/bin/pest tests/Integration
-```
+They also need the `pgsql` and `mysqli` extensions. CI provides both services, and
+`composer ci` (below) provides them locally.
 
 Avoid requiring Docker or FrankenPHP when a fake runtime, mock, or fixture can verify the
 Core contract. For view tests that invoke Vite helpers, choose the fixture mode explicitly:
@@ -61,15 +54,31 @@ Run a focused test while developing:
 
 ## Required Checks
 
-Run these commands from the Core repository before submitting a change:
+Every change must pass `composer ci` before it is submitted:
+
+```bash
+composer ci        # the full CI pipeline, in Docker
+composer ci-down   # remove its containers afterwards
+```
+
+`composer ci` runs `.github/workflows/quality.yml` locally through `docker-compose.ci.yml`:
+PHP 8.4 with `pgsql`, `mysqli`, `sqlite3` and `curl`, PostgreSQL 17 and MySQL 8.4 with
+the workflow's credentials, and the same steps in the same order:
 
 ```bash
 composer validate --no-check-publish
+composer install --prefer-dist --no-progress --no-interaction
 composer audit
 composer cs-check
 composer phpstan
-composer test
+composer test -- --fail-on-skipped
 ```
+
+It stops at the first failing step. Tests run with `--fail-on-skipped`: with the
+databases available nothing may be skipped, so a skipped suite fails the run instead of
+passing untested. The container runs as your user, so `vendor/` and caches written
+through the mounted checkout stay yours. `composer test` on the host is fine while
+iterating, but it skips the database suites.
 
 Use `composer cs-fix` to apply formatting. Do not manually imitate formatter output.
 PHPStan runs at its maximum configured level against `src/`.
