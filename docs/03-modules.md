@@ -16,6 +16,44 @@ error and size, plus `isValid()`, `moveTo()` and `openStream()`. The framework n
 selects a storage location: the application must validate the file and choose a safe,
 generated destination name before calling `moveTo()`.
 
+### HTTP Client
+
+`Atria\Http\Client\HttpClient` calls other services over HTTP through `ext-curl`. It is a
+singleton, so each worker keeps its connections (keep-alive, TLS sessions) and DNS
+results across requests. Inject it where needed:
+
+```php
+$response = $http->post('https://api.example.com/orders', [
+    'json' => ['sku' => 'A1'],
+    'headers' => ['Authorization' => "Bearer {$token}"],
+    'timeout' => 5,
+]);
+
+if (!$response->ok()) {
+    // $response->status, $response->body, $response->header('Retry-After')
+}
+
+$order = $response->json();
+```
+
+Options are `headers`, `query`, `json`, `form`, `body`, `timeout` (seconds, default 30),
+`connect_timeout` (default 10) and `follow_redirects` (default `false`, at most five).
+Error statuses (4xx/5xx) are regular responses; only transport failures (DNS,
+connection, TLS, timeout) raise `Atria\Http\Client\Exceptions\HttpClientException`,
+whose code is the curl error. Only `http` and `https` URLs are accepted, on redirects
+too, and header values containing line breaks are rejected.
+
+Outside `Async::run()` tasks a request blocks like any synchronous call. Inside
+`Async::concurrently()` requests overlap, so independent calls take as long as the
+slowest one:
+
+```php
+[$user, $repos] = Async::concurrently(
+    fn() => $http->get("https://api.example.com/users/{$id}")->json(),
+    fn() => $http->get("https://api.example.com/users/{$id}/repos")->json(),
+);
+```
+
 ## Database and Migrations
 
 `Atria\Database` contains the database contracts, query-builder abstractions, the schema

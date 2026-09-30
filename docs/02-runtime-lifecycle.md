@@ -42,6 +42,14 @@ while `session.cookie_secure` is on) write a new file, and PHP's session GC then
 the growing directory: removing it multiplied throughput by 4 to 12 in Atria's
 benchmarks.
 
+Reads never hold the session lock. `get()`, and `pull()` of a missing key, return the
+default without creating a session when the visitor sends no session cookie (with
+`session.use_cookies` on, PHP's default). With a cookie, they load the session with
+`read_and_close`, which releases the lock at once, so requests of the same user that only
+read run in parallel instead of queueing behind each other. `put()`, `forget()` and
+`pull()` of an existing key open the session for writing, re-read the stored data and
+hold the lock until the end of the request.
+
 Code must use `Session` instead of reading `$_SESSION` directly: after every request
 `Session::close()` writes the session and empties `$_SESSION`, so a worker never exposes
 one user's session to the next request.
