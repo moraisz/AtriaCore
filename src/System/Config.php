@@ -11,6 +11,7 @@ use Atria\Database\AbstractClasses\Model;
 use Atria\Database\Drivers;
 use Atria\Database\Migrator;
 use Atria\Database\Schema\Schema;
+use Atria\Http\Client\HttpClient;
 use Atria\Http\Router;
 use Atria\Http\Session;
 use Atria\Modules\Auth\AuthConfig;
@@ -59,6 +60,7 @@ class Config
     {
         $this->configureContainer($container);
         $this->configureEventLoop($container);
+        $this->configureHttpClient($container);
         $this->configureAuthConfig();
         $this->configureDatabase($container);
         $this->configureFranken();
@@ -110,6 +112,16 @@ class Config
     {
         $container->singleton(EventLoop::class, static fn(): EventLoop => EventLoop::instance());
         $container->make(EventLoop::class);
+    }
+
+    /**
+     * One client per worker, so its connections are reused across requests.
+     */
+    private function configureHttpClient(Container $container): void
+    {
+        if (extension_loaded('curl')) {
+            $container->singleton(HttpClient::class, static fn(): HttpClient => new HttpClient());
+        }
     }
 
     private function configureDatabase(Container $container, bool $migrator = false): void
